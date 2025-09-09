@@ -21,9 +21,9 @@ from dotenv import load_dotenv
 # Load environment variables from .env.local
 load_dotenv('.env.local')
 
-# Import centralized data extractor
+# Import centralized data extractor (optional)
 try:
-    from ..core.data_extractor import DataExtractor
+    from core.data_extractor import DataExtractor
     DATA_EXTRACTOR_AVAILABLE = True
 except ImportError:
     DATA_EXTRACTOR_AVAILABLE = False
@@ -48,6 +48,7 @@ class PhilippinesPropagandaAnalyzer:
         if not self.supabase_url or not self.supabase_key:
             print("⚠️  Supabase credentials not found in environment variables")
             print("   Please set SUPABASE_URL and SUPABASE_DATA_API_KEY_SECRET environment variables")
+            print("   Continuing without Supabase connection...")
             self.supabase = None
         else:
             self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
