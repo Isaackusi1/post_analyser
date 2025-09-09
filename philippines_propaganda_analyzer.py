@@ -590,7 +590,7 @@ class PhilippinesPropagandaAnalyzer:
         # Add CM system specific fields
         result['post_id'] = post_id
         result['project_id'] = project_id
-        result['should_scrape'] = (
+        result['should_scrape'] = bool(
             result.get('propaganda_score', 0) > 25 and
             not result.get('is_entertainment', False) and
             (result.get('is_maritime_focused', False) or 
@@ -647,14 +647,14 @@ class PhilippinesPropagandaAnalyzer:
         return {
             "post_id": post_id,
             "text_preview": text[:200] + "..." if len(text) > 200 else text,
-            "propaganda_score": propaganda_score,
-            "is_maritime_focused": is_maritime_focused,
-            "is_social_focused": is_social_focused,
+            "propaganda_score": float(propaganda_score),
+            "is_maritime_focused": bool(is_maritime_focused),
+            "is_social_focused": bool(is_social_focused),
             "is_entertainment": False,
             "keyword_analysis": keyword_analysis,
             "sentiment_analysis": sentiment_analysis,
             "eos_analysis": eos_analysis,
-            "analysis_timestamp": time.time()
+            "analysis_timestamp": float(time.time())
         }
     
     def analyze_posts_batch(self, posts_data: List[Dict[str, Any]], threshold: float = 25.0) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
