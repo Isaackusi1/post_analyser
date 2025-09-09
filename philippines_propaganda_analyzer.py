@@ -35,7 +35,7 @@ except LookupError:
     nltk.download('punkt')
 
 class PhilippinesPropagandaAnalyzer:
-    def __init__(self, project_id: int = 115):
+    def __init__(self, project_id = 115):
         """Initialize the Philippines-focused propaganda analyzer."""
         print("🔧 Initializing Philippines Propaganda Analyzer...")
         print("  🎯 Focus: Maritime security, territorial issues, and broader propaganda detection")
@@ -52,7 +52,12 @@ class PhilippinesPropagandaAnalyzer:
         else:
             self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
         
-        self.project_id = project_id
+        # Convert project_id to int if it's a string
+        try:
+            self.project_id = int(project_id)
+        except (ValueError, TypeError):
+            print(f"⚠️  Invalid project_id '{project_id}', using default 115")
+            self.project_id = 115
         
         # Initialize centralized data extractor if available
         if DATA_EXTRACTOR_AVAILABLE:
@@ -544,9 +549,45 @@ class PhilippinesPropagandaAnalyzer:
         
         return min(100, max(0, propaganda_score))
     
+    def analyze_post(self, post_text: str, post_id: str = None, project_id: str = "1") -> Dict[str, Any]:
+        """Analyze a single post for propaganda likelihood - CM System Integration."""
+        try:
+            # Convert project_id to int for internal use
+            project_id_int = int(project_id) if project_id else 1
+        except (ValueError, TypeError):
+            project_id_int = 1
+        
+        # Create ad data structure for analysis
+        ad_data = {
+            'primarykey': post_id or 'unknown',
+            'id': post_id or 'unknown',
+            'text': post_text,
+            'platform': 'facebook',
+            'adBodyHTML': post_text,
+            'adDescription': post_text,
+            'ad_headline': post_text[:100] if len(post_text) > 100 else post_text,
+            'ad_body': post_text
+        }
+        
+        # Use existing analyze_ad method
+        result = self.analyze_ad(ad_data)
+        
+        # Add CM system specific fields
+        result['post_id'] = post_id
+        result['project_id'] = project_id
+        result['should_scrape'] = (
+            result.get('propaganda_score', 0) > 25 and
+            not result.get('is_entertainment', False) and
+            (result.get('is_maritime_focused', False) or 
+             result.get('is_social_focused', False) or
+             len(result.get('eos_analysis', {}).get('top_matches', [])) > 0)
+        )
+        
+        return result
+    
     def analyze_ad(self, ad_data: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze a single ad for propaganda likelihood with Philippines focus."""
-        ad_id = ad_data.get('primarykey', 'unknown')
+        ad_id = ad_data.get('primarykey', ad_data.get('id', 'unknown'))
         
         # Extract text
         text = self._extract_text_fields(ad_data)
@@ -780,11 +821,14 @@ class PhilippinesPropagandaAnalyzer:
         # [Rest of the Supabase saving logic remains the same as original]
         # ... (keeping the same batch saving implementation)
 
-def main(project_id: int = None, platform: str = 'all', limit: int = None, threshold: float = 25.0, verbose: bool = False, overwrite: bool = False):
+def main(project_id = None, platform: str = 'all', limit: int = None, threshold: float = 25.0, verbose: bool = False, overwrite: bool = False):
     """Main function to run Philippines-focused propaganda analysis."""
     # Use environment variable or default
     if project_id is None:
-        project_id = int(os.getenv('DEFAULT_PROJECT_ID', '115'))
+        project_id = os.getenv('DEFAULT_PROJECT_ID', '115')
+    
+    # Use project_id as text for database queries
+    project_id_text = str(project_id)
     
     print("🇵🇭 PHILIPPINES PROPAGANDA DETECTION SYSTEM")
     print("="*60)
@@ -792,7 +836,7 @@ def main(project_id: int = None, platform: str = 'all', limit: int = None, thres
     print("="*60)
     
     # Initialize analyzer with project_id
-    analyzer = PhilippinesPropagandaAnalyzer(project_id=project_id)
+    analyzer = PhilippinesPropagandaAnalyzer(project_id=project_id_text)
     
     # [Rest of the main function logic remains the same]
     # Load ads data from Supabase (same implementation as original)
@@ -804,9 +848,9 @@ def main(project_id: int = None, platform: str = 'all', limit: int = None, thres
         print(f"📥 Loading ads from Supabase for project {project_id}...")
         
         # Get project info first
-        project_response = analyzer.supabase.table('projects').select('*').eq('projectid', project_id).execute()
+        project_response = analyzer.supabase.table('projects').select('*').eq('projectid', project_id_text).execute()
         if not project_response.data:
-            print(f"❌ Project {project_id} not found")
+            print(f"❌ Project {project_id_text} not found")
             return
         
         project_info = project_response.data[0]
@@ -816,12 +860,12 @@ def main(project_id: int = None, platform: str = 'all', limit: int = None, thres
         
         # Use RPC function to get pending ads efficiently
         if not overwrite:
-            print(f"🔍 Using RPC to get pending ads for project {project_id}...")
+            print(f"🔍 Using RPC to get pending ads for project {project_id_text}...")
             
             # Call the RPC function with appropriate parameters
             rpc_params = {
                 'p_project_name': project_name_formatted,
-                'p_project_id': project_id
+                'p_project_id': project_id_text
             }
             
             # Add platform filter if specified
@@ -836,7 +880,7 @@ def main(project_id: int = None, platform: str = 'all', limit: int = None, thres
             print(f"📊 Found {len(all_ads_data)} pending ads to process")
             
             if not all_ads_data:
-                print(f"✅ All ads for project {project_id} have already been processed!")
+                print(f"✅ All ads for project {project_id_text} have already been processed!")
                 print(f"💡 Use --overwrite flag to reprocess all ads")
                 return
                 
@@ -876,7 +920,7 @@ def main(project_id: int = None, platform: str = 'all', limit: int = None, thres
                 offset += page_size
             
             if not all_ads_data:
-                print(f"❌ No ads found for project {project_id}")
+                print(f"❌ No ads found for project {project_id_text}")
                 return
         
         # Apply limit if specified (after getting data)
@@ -968,7 +1012,42 @@ if __name__ == "__main__":
     import argparse
     import sys
     
-    # Set up argument parser
+    # Check if this is a single post analysis (CM System integration)
+    if len(sys.argv) >= 3 and sys.argv[1] == '--analyze-post':
+        # Single post analysis mode for CM System
+        if len(sys.argv) < 4:
+            print(json.dumps({
+                'success': False,
+                'message': 'Usage: python philippines_propaganda_analyzer.py --analyze-post "post_text" "post_id" [project_id]'
+            }))
+            sys.exit(1)
+        
+        post_text = sys.argv[2]
+        post_id = sys.argv[3]
+        project_id = sys.argv[4] if len(sys.argv) > 4 else "1"
+        
+        try:
+            # Initialize analyzer
+            analyzer = PhilippinesPropagandaAnalyzer(project_id=project_id)
+            
+            # Analyze the post
+            result = analyzer.analyze_post(post_text, post_id, project_id)
+            
+            # Output JSON result
+            print(json.dumps(result, indent=2))
+            
+        except Exception as e:
+            print(json.dumps({
+                'success': False,
+                'message': f'Analysis failed: {str(e)}',
+                'post_id': post_id,
+                'project_id': project_id
+            }))
+            sys.exit(1)
+        
+        sys.exit(0)
+    
+    # Set up argument parser for batch analysis
     parser = argparse.ArgumentParser(
         description="Philippines-focused Propaganda Analyzer with Maritime Security Emphasis",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -978,6 +1057,7 @@ Examples:
   python philippines_analyzer.py 120             # Analyze project_id 120
   python philippines_analyzer.py 120 facebook    # Analyze project_id 120, Facebook platform only
   python philippines_analyzer.py 120 all 100     # Analyze project_id 120, all platforms, limit to 100 ads
+  python philippines_analyzer.py --analyze-post "text" "post_id" "project_id"  # Analyze single post
   python philippines_analyzer.py --help          # Show this help message
         """
     )
@@ -985,8 +1065,8 @@ Examples:
     parser.add_argument(
         'project_id',
         nargs='?',
-        type=int,
-        default=115,
+        type=str,
+        default='115',
         help='Project ID to analyze (default: 115)'
     )
     
@@ -1032,9 +1112,9 @@ Examples:
     # Parse arguments
     args = parser.parse_args()
     
-    # Validate project_id
-    if args.project_id <= 0:
-        print(f"❌ Invalid project_id: {args.project_id}. Must be a positive integer.")
+    # Validate project_id (accept any non-empty string)
+    if not args.project_id or not args.project_id.strip():
+        print(f"❌ Invalid project_id: '{args.project_id}'. Must be a non-empty string.")
         sys.exit(1)
     
     # Validate limit if provided
