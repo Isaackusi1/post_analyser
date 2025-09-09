@@ -52,12 +52,8 @@ class PhilippinesPropagandaAnalyzer:
         else:
             self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
         
-        # Convert project_id to int if it's a string
-        try:
-            self.project_id = int(project_id)
-        except (ValueError, TypeError):
-            print(f"⚠️  Invalid project_id '{project_id}', using default 115")
-            self.project_id = 115
+        # Store project_id as text (for eos_definitions table compatibility)
+        self.project_id = str(project_id) if project_id else "115"
         
         # Initialize centralized data extractor if available
         if DATA_EXTRACTOR_AVAILABLE:
@@ -344,25 +340,46 @@ class PhilippinesPropagandaAnalyzer:
         
         return text.strip()
     
-    def _extract_text_fields(self, ad_data: Dict[str, Any]) -> str:
-        """Extract and combine all text fields from ad data."""
+    def _extract_text_fields(self, post_data: Dict[str, Any]) -> str:
+        """Extract and combine all text fields from post data (CM System format)."""
         text_fields = []
         
-        # Add adBodyHTML if available
-        if ad_data.get('adBodyHTML'):
-            text_fields.append(self._clean_text(ad_data['adBodyHTML']))
+        # Add post_text if available (primary content)
+        if post_data.get('post_text'):
+            text_fields.append(self._clean_text(post_data['post_text']))
         
-        # Add adDescription if available
-        if ad_data.get('adDescription'):
-            text_fields.append(self._clean_text(ad_data['adDescription']))
+        # Add content if available
+        if post_data.get('content'):
+            text_fields.append(self._clean_text(post_data['content']))
         
-        # Add ad_headline if available
-        if ad_data.get('ad_headline'):
-            text_fields.append(self._clean_text(ad_data['ad_headline']))
+        # Add text if available
+        if post_data.get('text'):
+            text_fields.append(self._clean_text(post_data['text']))
         
-        # Add ad_body if available
-        if ad_data.get('ad_body'):
-            text_fields.append(self._clean_text(ad_data['ad_body']))
+        # Add description if available
+        if post_data.get('description'):
+            text_fields.append(self._clean_text(post_data['description']))
+        
+        # Add title if available
+        if post_data.get('title'):
+            text_fields.append(self._clean_text(post_data['title']))
+        
+        # Add body if available
+        if post_data.get('body'):
+            text_fields.append(self._clean_text(post_data['body']))
+        
+        # Fallback to legacy ad fields if present
+        if post_data.get('adBodyHTML'):
+            text_fields.append(self._clean_text(post_data['adBodyHTML']))
+        
+        if post_data.get('adDescription'):
+            text_fields.append(self._clean_text(post_data['adDescription']))
+        
+        if post_data.get('ad_headline'):
+            text_fields.append(self._clean_text(post_data['ad_headline']))
+        
+        if post_data.get('ad_body'):
+            text_fields.append(self._clean_text(post_data['ad_body']))
         
         # Combine all text fields
         combined_text = " | ".join([field for field in text_fields if field])
@@ -551,26 +568,23 @@ class PhilippinesPropagandaAnalyzer:
     
     def analyze_post(self, post_text: str, post_id: str = None, project_id: str = "1") -> Dict[str, Any]:
         """Analyze a single post for propaganda likelihood - CM System Integration."""
-        try:
-            # Convert project_id to int for internal use
-            project_id_int = int(project_id) if project_id else 1
-        except (ValueError, TypeError):
-            project_id_int = 1
+        # Use project_id as text
+        project_id_text = str(project_id) if project_id else "1"
         
-        # Create ad data structure for analysis
-        ad_data = {
-            'primarykey': post_id or 'unknown',
+        # Create post data structure for analysis (CM System format)
+        post_data = {
             'id': post_id or 'unknown',
             'text': post_text,
+            'content': post_text,
             'platform': 'facebook',
-            'adBodyHTML': post_text,
-            'adDescription': post_text,
-            'ad_headline': post_text[:100] if len(post_text) > 100 else post_text,
-            'ad_body': post_text
+            'post_text': post_text,
+            'description': post_text,
+            'title': post_text[:100] if len(post_text) > 100 else post_text,
+            'body': post_text
         }
         
-        # Use existing analyze_ad method
-        result = self.analyze_ad(ad_data)
+        # Use existing analyze_ad method (it will work with any data structure)
+        result = self.analyze_ad(post_data)
         
         # Add CM system specific fields
         result['post_id'] = post_id
@@ -585,15 +599,15 @@ class PhilippinesPropagandaAnalyzer:
         
         return result
     
-    def analyze_ad(self, ad_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze a single ad for propaganda likelihood with Philippines focus."""
-        ad_id = ad_data.get('primarykey', ad_data.get('id', 'unknown'))
+    def analyze_ad(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze a single post for propaganda likelihood with Philippines focus."""
+        post_id = post_data.get('id', 'unknown')
         
         # Extract text
-        text = self._extract_text_fields(ad_data)
+        text = self._extract_text_fields(post_data)
         if not text:
             return {
-                "ad_id": ad_id,
+                "post_id": post_id,
                 "error": "No text content found",
                 "propaganda_score": 0
             }
@@ -604,7 +618,7 @@ class PhilippinesPropagandaAnalyzer:
         # Check if it's entertainment content - skip if it is
         if keyword_analysis.get('is_entertainment', False):
             return {
-                "ad_id": ad_id,
+                "post_id": post_id,
                 "text_preview": text[:200] + "..." if len(text) > 200 else text,
                 "propaganda_score": 0,
                 "is_entertainment": True,
@@ -630,7 +644,7 @@ class PhilippinesPropagandaAnalyzer:
         is_social_focused = social_matches >= 2
         
         return {
-            "ad_id": ad_id,
+            "post_id": post_id,
             "text_preview": text[:200] + "..." if len(text) > 200 else text,
             "propaganda_score": propaganda_score,
             "is_maritime_focused": is_maritime_focused,
@@ -642,9 +656,9 @@ class PhilippinesPropagandaAnalyzer:
             "analysis_timestamp": time.time()
         }
     
-    def analyze_ads_batch(self, ads_data: List[Dict[str, Any]], threshold: float = 25.0) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """Analyze a batch of ads and return candidates above threshold."""
-        print(f"🔍 Analyzing {len(ads_data)} ads for Philippines propaganda candidates...")
+    def analyze_posts_batch(self, posts_data: List[Dict[str, Any]], threshold: float = 25.0) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Analyze a batch of posts and return candidates above threshold."""
+        print(f"🔍 Analyzing {len(posts_data)} posts for Philippines propaganda candidates...")
         print(f"   Focus: Social/political issues, maritime security, excluding entertainment")
         
         all_results = []
@@ -653,11 +667,11 @@ class PhilippinesPropagandaAnalyzer:
         social_candidates = []
         entertainment_filtered = 0
         
-        for i, ad_data in enumerate(ads_data):
+        for i, post_data in enumerate(posts_data):
             if i % 10 == 0:
-                print(f"  Progress: {i}/{len(ads_data)} ads analyzed")
+                print(f"  Progress: {i}/{len(posts_data)} posts analyzed")
             
-            result = self.analyze_ad(ad_data)
+            result = self.analyze_ad(post_data)
             all_results.append(result)
             
             # Track entertainment content that was filtered
@@ -665,7 +679,7 @@ class PhilippinesPropagandaAnalyzer:
                 entertainment_filtered += 1
                 continue  # Skip entertainment content
             
-            # Check if this ad qualifies as a candidate
+            # Check if this post qualifies as a candidate
             if result.get('propaganda_score', 0) >= threshold:
                 candidates.append(result)
                 
@@ -681,7 +695,7 @@ class PhilippinesPropagandaAnalyzer:
         print(f"   Total candidates: {len(candidates)} above threshold ({threshold}%)")
         print(f"   Maritime/security focused: {len(maritime_candidates)} candidates")
         print(f"   Social issues focused: {len(social_candidates)} candidates")
-        print(f"   Entertainment content filtered: {entertainment_filtered} ads")
+        print(f"   Entertainment content filtered: {entertainment_filtered} posts")
         
         return all_results, candidates
     
@@ -756,12 +770,8 @@ class PhilippinesPropagandaAnalyzer:
                 for result in results:
                     ad_id = result.get('ad_id', 'unknown')
                     
-                    # Skip if ad_id is not a valid integer
-                    try:
-                        ad_id_int = int(ad_id)
-                    except (ValueError, TypeError):
-                        print(f"⚠️  Skipping invalid ad_id: {ad_id}")
-                        continue
+                    # Use ad_id as text
+                    ad_id_text = str(ad_id)
                     
                     text = result.get('text_preview', '')
                     propaganda_score = result.get('propaganda_score', 0)
@@ -790,7 +800,7 @@ class PhilippinesPropagandaAnalyzer:
                             }
                     
                     formatted_results.append({
-                        'ad_id': ad_id_int,
+                        'ad_id': ad_id_text,
                         'project_id': self.project_id,
                         'text': text,
                         'propaganda_score': round(propaganda_score, 2),
@@ -939,8 +949,8 @@ def main(project_id = None, platform: str = 'all', limit: int = None, threshold:
     print("PROPAGANDA ANALYSIS - PHILIPPINES FOCUS")
     print("="*60)
     
-    # Analyze all ads
-    all_results, candidates = analyzer.analyze_ads_batch(ads_data, threshold=threshold)
+    # Analyze all posts
+    all_results, candidates = analyzer.analyze_posts_batch(ads_data, threshold=threshold)
     
     # Save ALL results to Supabase
     print(f"💾 Saving ALL {len(all_results)} results to database...")
