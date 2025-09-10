@@ -951,6 +951,14 @@ if __name__ == "__main__":
             # Analyze the post
             result = analyzer.analyze_post(post_text, post_id, page_group_id)
             
+            # Save to database
+            try:
+                analyzer.save_results_to_supabase([result])
+                result['database_saved'] = True
+            except Exception as db_error:
+                result['database_saved'] = False
+                result['database_error'] = str(db_error)
+            
             # Output JSON result
             print(json.dumps(result, indent=2))
             
