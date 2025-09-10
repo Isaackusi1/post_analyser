@@ -52,7 +52,7 @@ class PhilippinesPropagandaAnalyzer:
         self.page_group_id = str(page_group_id) if page_group_id else "115"
         
         # Direct Supabase integration - no data extractor needed
-        self.data_extractor = None
+            self.data_extractor = None
         
         # Load sentence transformer model
         print("  📥 Loading sentence transformer model...")
@@ -72,7 +72,7 @@ class PhilippinesPropagandaAnalyzer:
         if self.supabase is None:
             print("  ⚠️  Supabase not available, using empty EOS definitions")
             return {}
-        
+            
         try:
             print(f"  📊 Loading EOS definitions from Supabase for page_group_id: {self.page_group_id}")
             
@@ -746,7 +746,7 @@ class PhilippinesPropagandaAnalyzer:
                     update_response = self.supabase.table('posts').update({
                         'prequal': prequal,
                         'prequal_confidence': prequal_confidence
-                    }).eq('id', post_id).execute()
+                    }).eq('post_id', post_id).execute()
                     
                     if update_response.data:
                         print(f"    ✅ Updated post {post_id}: prequal={prequal}, confidence={prequal_confidence:.2f}")
@@ -755,7 +755,7 @@ class PhilippinesPropagandaAnalyzer:
             
             print(f"✅ Successfully updated {len(results)} posts with prequal results")
             
-        except Exception as e:
+            except Exception as e:
             print(f"❌ Error saving results to Supabase: {e}")
             raise
 
