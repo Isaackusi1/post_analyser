@@ -764,7 +764,7 @@ class PhilippinesPropagandaAnalyzer:
             print(f"❌ Error saving results to Supabase: {e}")
             raise
 
-def main(page_group_id = None, platform: str = 'all', limit: int = None, threshold: float = 25.0, verbose: bool = False, overwrite: bool = False):
+def main(page_group_id = None, platform: str = 'all', limit: int = None, threshold: float = 25.0, verbose: bool = False, overwrite: bool = False, post_ids: List[str] = None):
     """Main function to run Philippines-focused propaganda analysis."""
     # Use environment variable or default
     if page_group_id is None:
@@ -788,7 +788,24 @@ def main(page_group_id = None, platform: str = 'all', limit: int = None, thresho
         return
     
     try:
-        print(f"📥 Loading posts from Supabase for page_group {page_group_id}...")
+        # Check if specific post_ids were provided
+        if post_ids and len(post_ids) > 0:
+            print(f"📥 Loading specific posts by IDs: {post_ids}")
+            
+            # Load specific posts by their IDs
+            posts_query = analyzer.supabase.table('posts').select('*').in_('post_id', post_ids)
+            response = posts_query.execute()
+            posts_data = response.data
+            
+            if not posts_data:
+                print(f"❌ No posts found with the provided IDs")
+                return
+            
+            print(f"📊 Found {len(posts_data)} posts with provided IDs")
+            print(f"✅ Will process {len(posts_data)} posts")
+            
+        else:
+            print(f"📥 Loading posts from Supabase for page_group {page_group_id}...")
         
         # Get page_group info first
         page_group_response = analyzer.supabase.table('page_groups').select('*').eq('id', page_group_id_text).execute()
@@ -988,6 +1005,7 @@ Examples:
   python philippines_analyzer.py 120             # Analyze page_group_id 120
   python philippines_analyzer.py 120 facebook    # Analyze page_group_id 120, Facebook platform only
   python philippines_analyzer.py 120 all 100     # Analyze page_group_id 120, all platforms, limit to 100 posts
+  python philippines_analyzer.py --post-ids 123 456 789  # Analyze specific posts by ID
   python philippines_analyzer.py --analyze-post "text" "post_id" "page_group_id"  # Analyze single post
   python philippines_analyzer.py --help          # Show this help message
         """
@@ -1040,6 +1058,14 @@ Examples:
         help='Process all ads, even if already analyzed (default: skip analyzed ads)'
     )
     
+    parser.add_argument(
+        '--post-ids',
+        '-p',
+        nargs='+',
+        type=str,
+        help='Specific post IDs to analyze (space-separated)'
+    )
+    
     # Parse arguments
     args = parser.parse_args()
     
@@ -1065,7 +1091,9 @@ Examples:
     print(f"   Threshold: {args.threshold}%")
     print(f"   Verbose: {args.verbose}")
     print(f"   Overwrite: {args.overwrite}")
+    if args.post_ids:
+        print(f"   Post IDs: {args.post_ids}")
     print()
     
     main(page_group_id=args.page_group_id, platform=args.platform, limit=args.limit, 
-         threshold=args.threshold, verbose=args.verbose, overwrite=args.overwrite)
+         threshold=args.threshold, verbose=args.verbose, overwrite=args.overwrite, post_ids=args.post_ids)
