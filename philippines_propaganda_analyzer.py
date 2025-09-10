@@ -21,12 +21,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env.local
 load_dotenv('.env.local')
 
-# Import centralized data extractor (optional)
-try:
-    from core.data_extractor import DataExtractor
-    DATA_EXTRACTOR_AVAILABLE = True
-except ImportError:
-    DATA_EXTRACTOR_AVAILABLE = False
+# Removed centralized data extractor - using direct Supabase calls
 
 # Download required NLTK data
 try:
@@ -56,16 +51,8 @@ class PhilippinesPropagandaAnalyzer:
         # Store page_group_id as text (for eos_definitions table compatibility)
         self.page_group_id = str(page_group_id) if page_group_id else "115"
         
-        # Initialize centralized data extractor if available
-        if DATA_EXTRACTOR_AVAILABLE:
-            try:
-                self.data_extractor = DataExtractor()
-                print("  ✅ Centralized data extractor initialized")
-            except Exception as e:
-                print(f"  ⚠️  Could not initialize centralized data extractor: {e}")
-                self.data_extractor = None
-        else:
-            self.data_extractor = None
+        # Direct Supabase integration - no data extractor needed
+        self.data_extractor = None
         
         # Load sentence transformer model
         print("  📥 Loading sentence transformer model...")
@@ -81,51 +68,20 @@ class PhilippinesPropagandaAnalyzer:
         print("✅ Philippines Propaganda Analyzer initialized successfully!")
     
     def _load_eos_definitions(self) -> Dict[str, str]:
-        """Load EOS definitions from centralized extractor or fallback to direct Supabase."""
-        # Try centralized data extractor first
-        if self.data_extractor is not None:
-            try:
-                print(f"  📊 Loading EOS definitions using centralized extractor for page_group_id: {self.page_group_id}")
-                eos_definitions = self.data_extractor.get_eos_definitions(self.page_group_id)
-                
-                definitions = {}
-                for record in eos_definitions:
-                    theme = record.get('theme', '')
-                    narrative_element = record.get('narrative_element', '')
-                    definition = record.get('definition', '')
-                    signals = record.get('signals', '')
-                    
-                    # Combine narrative_element and definition for better matching
-                    combined_text = f"{narrative_element}"
-                    if definition:
-                        combined_text += f": {definition}"
-                    if signals:
-                        combined_text += f" | Signals: {signals}"
-                    
-                    if theme and combined_text.strip():
-                        definitions[theme] = combined_text.strip()
-                
-                print(f"  ✅ Loaded {len(definitions)} EOS definitions using centralized extractor")
-                return definitions
-                
-            except Exception as e:
-                print(f"  ⚠️  Centralized extractor failed: {e}, falling back to direct Supabase")
-        
-        # Fallback to direct Supabase query
+        """Load EOS definitions directly from Supabase."""
         if self.supabase is None:
-            print("  ❌ Supabase not available")
+            print("  ⚠️  Supabase not available, using empty EOS definitions")
             return {}
-            
+        
         try:
-            print(f"  📊 Loading EOS definitions directly from Supabase for page_group_id: {self.page_group_id}")
+            print(f"  📊 Loading EOS definitions from Supabase for page_group_id: {self.page_group_id}")
             
-            # Query EOS definitions from Supabase
-            response = self.supabase.table('eos_definitions').select(
-                'narrative_element, theme, definition, signals'
-            ).eq('page_group_id', self.page_group_id).execute()
+            # Query eos_definitions table directly
+            response = self.supabase.table('eos_definitions').select('*').eq('page_group_id', self.page_group_id).execute()
+            eos_definitions = response.data
             
             definitions = {}
-            for record in response.data:
+            for record in eos_definitions:
                 theme = record.get('theme', '')
                 narrative_element = record.get('narrative_element', '')
                 definition = record.get('definition', '')
@@ -666,7 +622,22 @@ class PhilippinesPropagandaAnalyzer:
             if i % 10 == 0:
                 print(f"  Progress: {i}/{len(posts_data)} posts analyzed")
             
-            result = self.analyze_ad(post_data)
+            # Extract post text from various possible fields
+            post_text = (
+                post_data.get('content') or 
+                post_data.get('text') or 
+                post_data.get('description') or 
+                post_data.get('title') or 
+                post_data.get('body') or 
+                ''
+            )
+            
+            if not post_text.strip():
+                print(f"    ⚠️  Skipping post {post_data.get('id', 'unknown')} - no text content")
+                continue
+            
+            # Analyze the post
+            result = self.analyze_post(post_text, post_data.get('id'), self.page_group_id)
             all_results.append(result)
             
             # Track entertainment content that was filtered
@@ -702,7 +673,7 @@ class PhilippinesPropagandaAnalyzer:
         # Create clean structured output
         structured_results = []
         for result in results:
-            ad_id = result.get('ad_id', 'unknown')
+            post_id = result.get('post_id', result.get('ad_id', 'unknown'))
             text = result.get('text_preview', '')
             propaganda_score = result.get('propaganda_score', 0)
             is_maritime = result.get('is_maritime_focused', False)
@@ -731,7 +702,7 @@ class PhilippinesPropagandaAnalyzer:
             
             # Create clean structured result
             structured_result = {
-                "ad_id": ad_id,
+                "post_id": post_id,
                 "text": text,
                 "propaganda_score": round(propaganda_score, 1),
                 "is_maritime_security_focused": is_maritime,
@@ -752,79 +723,41 @@ class PhilippinesPropagandaAnalyzer:
         print(f"💾 Results saved to: {output_path}")
     
     def save_results_to_supabase(self, results: List[Dict[str, Any]], batch_size: int = 10):
-        """Save analysis results to Supabase ad_qualification_results table in batches."""
-        print(f"💾 Saving {len(results)} results to Supabase in batches of {batch_size}...")
+        """Save analysis results to Supabase posts table by updating prequal columns."""
+        print(f"💾 Saving {len(results)} results to Supabase posts table in batches of {batch_size}...")
         
-        # Try centralized data extractor first
-        if self.data_extractor is not None:
-            try:
-                print("  🔄 Using centralized data extractor for saving...")
-                
-                # Prepare data in the format expected by centralized extractor
-                formatted_results = []
-                for result in results:
-                    ad_id = result.get('ad_id', 'unknown')
-                    
-                    # Use ad_id as text
-                    ad_id_text = str(ad_id)
-                    
-                    text = result.get('text_preview', '')
-                    propaganda_score = result.get('propaganda_score', 0)
-                    is_maritime = result.get('is_maritime_focused', False)
-                    
-                    # Extract EOS matches with percentages
-                    eos_analysis = result.get('eos_analysis', {})
-                    top_matches = eos_analysis.get('top_matches', [])
-                    
-                    matches = {}
-                    for theme, score in top_matches:
-                        percentage = round(score * 100, 1)
-                        matches[theme] = percentage
-                    
-                    # Extract keyword analysis
-                    keyword_analysis = result.get('keyword_analysis', {})
-                    keyword_scores = keyword_analysis.get('keyword_scores', {})
-                    
-                    # Create keyword summary
-                    keyword_summary = {}
-                    for category, data in keyword_scores.items():
-                        if data['count'] > 0:
-                            keyword_summary[category] = {
-                                "count": data['count'],
-                                "matched": data.get('matched_terms', [])[:5]
-                            }
-                    
-                    formatted_results.append({
-                        'ad_id': ad_id_text,
-                        'page_group_id': self.page_group_id,
-                        'text': text,
-                        'propaganda_score': round(propaganda_score, 2),
-                        'is_maritime_focused': is_maritime,
-                        'matches': matches,
-                        'keyword_matches': keyword_summary,
-                        'total_keyword_matches': keyword_analysis.get('total_matches', 0),
-                        'sentiment': {
-                            'polarity': round(result.get('sentiment_analysis', {}).get('polarity', 0), 3),
-                            'subjectivity': round(result.get('sentiment_analysis', {}).get('subjectivity', 0), 3)
-                        }
-                    })
-                
-                success = self.data_extractor.save_analysis_results(formatted_results)
-                if success:
-                    print("  ✅ Successfully saved using centralized data extractor")
-                    return
-                else:
-                    print("  ⚠️  Centralized extractor failed, falling back to direct Supabase")
-            except Exception as e:
-                print(f"  ⚠️  Centralized extractor error: {e}, falling back to direct Supabase")
-        
-        # Fallback to direct Supabase
         if self.supabase is None:
             print("⚠️  Supabase not available, skipping database save")
             return
         
-        # [Rest of the Supabase saving logic remains the same as original]
-        # ... (keeping the same batch saving implementation)
+        try:
+            # Process results in batches
+            for i in range(0, len(results), batch_size):
+                batch = results[i:i + batch_size]
+                print(f"  📝 Processing batch {i//batch_size + 1}/{(len(results) + batch_size - 1)//batch_size}")
+                
+                # Update posts table with prequal results
+                for result in batch:
+                    post_id = result.get('post_id', result.get('ad_id', 'unknown'))
+                    prequal = result.get('prequal', False)
+                    prequal_confidence = result.get('prequal_confidence', 0.0)
+                    
+                    # Update the posts table with prequal results
+                    update_response = self.supabase.table('posts').update({
+                        'prequal': prequal,
+                        'prequal_confidence': prequal_confidence
+                    }).eq('id', post_id).execute()
+                    
+                    if update_response.data:
+                        print(f"    ✅ Updated post {post_id}: prequal={prequal}, confidence={prequal_confidence:.2f}")
+                    else:
+                        print(f"    ⚠️  No post found with ID {post_id}")
+            
+            print(f"✅ Successfully updated {len(results)} posts with prequal results")
+            
+        except Exception as e:
+            print(f"❌ Error saving results to Supabase: {e}")
+            raise
 
 def main(page_group_id = None, platform: str = 'all', limit: int = None, threshold: float = 25.0, verbose: bool = False, overwrite: bool = False):
     """Main function to run Philippines-focused propaganda analysis."""
@@ -850,102 +783,82 @@ def main(page_group_id = None, platform: str = 'all', limit: int = None, thresho
         return
     
     try:
-        print(f"📥 Loading ads from Supabase for page_group {page_group_id}...")
+        print(f"📥 Loading posts from Supabase for page_group {page_group_id}...")
         
         # Get page_group info first
-        page_group_response = analyzer.supabase.table('page_groups').select('*').eq('page_group_id', page_group_id_text).execute()
+        page_group_response = analyzer.supabase.table('page_groups').select('*').eq('id', page_group_id_text).execute()
         if not page_group_response.data:
             print(f"❌ Page Group {page_group_id_text} not found")
             return
         
         page_group_info = page_group_response.data[0]
-        page_group_name = page_group_info['page_group_name']
-        page_group_name_formatted = page_group_name.lower().replace(' ', '_')
-        print(f"📋 Page Group: {page_group_name} (formatted: {page_group_name_formatted})")
+        page_group_name = page_group_info['name']
+        print(f"📋 Page Group: {page_group_name}")
         
-        # Use RPC function to get pending ads efficiently
+        # Load posts that need prequalification
         if not overwrite:
-            print(f"🔍 Using RPC to get pending ads for page_group {page_group_id_text}...")
+            print(f"🔍 Loading posts that need prequalification...")
             
-            # Call the RPC function with appropriate parameters
-            rpc_params = {
-                'p_page_group_name': page_group_name_formatted,
-                'p_page_group_id': page_group_id_text
-            }
-            
-            # Add platform filter if specified
-            if platform and platform.lower() != 'all':
-                rpc_params['p_platform'] = platform
-                print(f"🔍 Filtering by platform: {platform}")
-            
-            # Execute RPC call
-            response = analyzer.supabase.rpc('get_ads_pending_qualification', rpc_params).execute()
-            
-            all_ads_data = response.data
-            print(f"📊 Found {len(all_ads_data)} pending ads to process")
-            
-            if not all_ads_data:
-                print(f"✅ All ads for page_group {page_group_id_text} have already been processed!")
-                print(f"💡 Use --overwrite flag to reprocess all ads")
-                return
-                
-        else:
-            print(f"🔄 Overwrite mode: Loading all ads for reprocessing...")
-            
-            # Build query for master_ad_creatives (for overwrite mode)
-            query = analyzer.supabase.table('master_ad_creatives').select('*').eq('page_group', page_group_name_formatted)
+            # Query posts that don't have prequal results yet
+            posts_query = analyzer.supabase.table('posts').select('*').eq('page_group_id', page_group_id_text).is_('prequal', 'null')
             
             # Apply platform filter if specified
             if platform and platform.lower() != 'all':
-                query = query.ilike('platform', platform)
+                posts_query = posts_query.eq('platform', platform)
                 print(f"🔍 Filtering by platform: {platform}")
             
-            # Execute query with pagination to get ALL ads
-            all_ads_data = []
-            page_size = 1000
-            offset = 0
+            # Apply limit if specified
+            if limit:
+                posts_query = posts_query.limit(limit)
+                print(f"🔍 Limiting to {limit} posts")
             
-            while True:
-                # Apply pagination
-                page_query = query.range(offset, offset + page_size - 1)
-                
-                # Execute query
-                response = page_query.execute()
-                
-                if not response.data:
-                    break
-                
-                all_ads_data.extend(response.data)
-                print(f"📥 Loaded batch {len(all_ads_data)//page_size + 1}: {len(response.data)} ads (total: {len(all_ads_data)})")
-                
-                # If we got less than page_size, we've reached the end
-                if len(response.data) < page_size:
-                    break
-                
-                offset += page_size
+            response = posts_query.execute()
+            all_posts_data = response.data
+            print(f"📊 Found {len(all_posts_data)} posts needing prequalification")
             
-            if not all_ads_data:
-                print(f"❌ No ads found for page_group {page_group_id_text}")
+            if not all_posts_data:
+                print(f"✅ All posts for page_group {page_group_id_text} have already been prequalified!")
+                print(f"💡 Use --overwrite flag to reprocess all posts")
+                return
+                
+        else:
+            print(f"🔄 Overwrite mode: Loading all posts for reprocessing...")
+            
+            # Build query for all posts in the page group
+            posts_query = analyzer.supabase.table('posts').select('*').eq('page_group_id', page_group_id_text)
+            
+            # Apply platform filter if specified
+            if platform and platform.lower() != 'all':
+                posts_query = posts_query.eq('platform', platform)
+                print(f"🔍 Filtering by platform: {platform}")
+            
+            # Apply limit if specified
+            if limit:
+                posts_query = posts_query.limit(limit)
+                print(f"🔍 Limiting to {limit} posts")
+            
+            response = posts_query.execute()
+            all_posts_data = response.data
+            print(f"📊 Found {len(all_posts_data)} posts for reprocessing")
+            
+            if not all_posts_data:
+                print(f"❌ No posts found for page_group {page_group_id_text}")
                 return
         
-        # Apply limit if specified (after getting data)
-        if limit:
-            all_ads_data = all_ads_data[:limit]
-        
-        ads_data = all_ads_data
-        print(f"✅ Will process {len(ads_data)} ads")
+        posts_data = all_posts_data
+        print(f"✅ Will process {len(posts_data)} posts")
         
     except Exception as e:
         print(f"❌ Error loading ads from Supabase: {e}")
         return
     
-    # Analyze all ads
+    # Analyze all posts
     print("\n" + "="*60)
     print("PROPAGANDA ANALYSIS - PHILIPPINES FOCUS")
     print("="*60)
     
     # Analyze all posts
-    all_results, candidates = analyzer.analyze_posts_batch(ads_data, threshold=threshold)
+    all_results, candidates = analyzer.analyze_posts_batch(posts_data, threshold=threshold)
     
     # Save ALL results to Supabase
     print(f"💾 Saving ALL {len(all_results)} results to database...")
@@ -968,7 +881,7 @@ def main(page_group_id = None, platform: str = 'all', limit: int = None, thresho
         
         for i, candidate in enumerate(sorted_candidates[:10], 1):
             score = candidate.get('propaganda_score', 0)
-            ad_id = candidate.get('ad_id', 'unknown')
+            post_id = candidate.get('post_id', candidate.get('ad_id', 'unknown'))
             text_preview = candidate.get('text_preview', 'N/A')
             is_maritime = candidate.get('is_maritime_focused', False)
             is_social = candidate.get('is_social_focused', False)
@@ -982,7 +895,7 @@ def main(page_group_id = None, platform: str = 'all', limit: int = None, thresho
             
             tag_string = f" [{', '.join(tags)}]" if tags else ""
             
-            print(f"\n{i}. Ad ID: {ad_id} (Score: {score:.1f}%){tag_string}")
+            print(f"\n{i}. Post ID: {post_id} (Score: {score:.1f}%){tag_string}")
             print(f"   Text: {text_preview}")
             
             # Show keyword matches with details
@@ -1058,11 +971,11 @@ if __name__ == "__main__":
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python philippines_analyzer.py                 # Run with default settings (project_id=115)
-  python philippines_analyzer.py 120             # Analyze project_id 120
-  python philippines_analyzer.py 120 facebook    # Analyze project_id 120, Facebook platform only
-  python philippines_analyzer.py 120 all 100     # Analyze project_id 120, all platforms, limit to 100 ads
-  python philippines_analyzer.py --analyze-post "text" "post_id" "project_id"  # Analyze single post
+  python philippines_analyzer.py                 # Run with default settings (page_group_id=115)
+  python philippines_analyzer.py 120             # Analyze page_group_id 120
+  python philippines_analyzer.py 120 facebook    # Analyze page_group_id 120, Facebook platform only
+  python philippines_analyzer.py 120 all 100     # Analyze page_group_id 120, all platforms, limit to 100 posts
+  python philippines_analyzer.py --analyze-post "text" "post_id" "page_group_id"  # Analyze single post
   python philippines_analyzer.py --help          # Show this help message
         """
     )
@@ -1081,7 +994,7 @@ Examples:
         type=str,
         default='all',
         choices=['all', 'facebook', 'google', 'tiktok', 'youtube', 'instagram', 'twitter'],
-        help='Platform to filter ads by (default: all)'
+        help='Platform to filter posts by (default: all)'
     )
     
     parser.add_argument(
@@ -1089,7 +1002,7 @@ Examples:
         nargs='?',
         type=int,
         default=None,
-        help='Limit number of ads to analyze (default: all ads)'
+        help='Limit number of posts to analyze (default: all posts)'
     )
     
     parser.add_argument(
@@ -1135,7 +1048,7 @@ Examples:
     print(f"🚀 Starting Philippines-focused analysis with:")
     print(f"   Page Group ID: {args.page_group_id}")
     print(f"   Platform: {args.platform}")
-    print(f"   Limit: {args.limit if args.limit else 'all ads'}")
+    print(f"   Limit: {args.limit if args.limit else 'all posts'}")
     print(f"   Threshold: {args.threshold}%")
     print(f"   Verbose: {args.verbose}")
     print(f"   Overwrite: {args.overwrite}")
