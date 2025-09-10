@@ -633,11 +633,11 @@ class PhilippinesPropagandaAnalyzer:
             )
             
             if not post_text.strip():
-                print(f"    ⚠️  Skipping post {post_data.get('id', 'unknown')} - no text content")
+                print(f"    ⚠️  Skipping post {post_data.get('post_id', 'unknown')} - no text content")
                 continue
             
             # Analyze the post
-            result = self.analyze_post(post_text, post_data.get('id'), self.page_group_id)
+            result = self.analyze_post(post_text, post_data.get('post_id'), self.page_group_id)
             all_results.append(result)
             
             # Track entertainment content that was filtered
