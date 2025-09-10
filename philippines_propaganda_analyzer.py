@@ -52,7 +52,7 @@ class PhilippinesPropagandaAnalyzer:
         self.page_group_id = str(page_group_id) if page_group_id else "115"
         
         # Direct Supabase integration - no data extractor needed
-            self.data_extractor = None
+        self.data_extractor = None
         
         # Load sentence transformer model
         print("  📥 Loading sentence transformer model...")
@@ -755,7 +755,7 @@ class PhilippinesPropagandaAnalyzer:
             
             print(f"✅ Successfully updated {len(results)} posts with prequal results")
             
-            except Exception as e:
+        except Exception as e:
             print(f"❌ Error saving results to Supabase: {e}")
             raise
 
