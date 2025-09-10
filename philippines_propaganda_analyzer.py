@@ -369,18 +369,6 @@ class PhilippinesPropagandaAnalyzer:
         if post_data.get('body'):
             text_fields.append(self._clean_text(post_data['body']))
         
-        # Fallback to legacy ad fields if present
-        if post_data.get('adBodyHTML'):
-            text_fields.append(self._clean_text(post_data['adBodyHTML']))
-        
-        if post_data.get('adDescription'):
-            text_fields.append(self._clean_text(post_data['adDescription']))
-        
-        if post_data.get('ad_headline'):
-            text_fields.append(self._clean_text(post_data['ad_headline']))
-        
-        if post_data.get('ad_body'):
-            text_fields.append(self._clean_text(post_data['ad_body']))
         
         # Combine all text fields
         combined_text = " | ".join([field for field in text_fields if field])
@@ -590,13 +578,19 @@ class PhilippinesPropagandaAnalyzer:
         # Add CM system specific fields
         result['post_id'] = post_id
         result['project_id'] = project_id
-        result['should_scrape'] = bool(
+        
+        # Calculate prequal decision and confidence
+        should_scrape = bool(
             result.get('propaganda_score', 0) > 25 and
             not result.get('is_entertainment', False) and
             (result.get('is_maritime_focused', False) or 
              result.get('is_social_focused', False) or
              len(result.get('eos_analysis', {}).get('top_matches', [])) > 0)
         )
+        
+        result['should_scrape'] = should_scrape
+        result['prequal'] = should_scrape
+        result['prequal_confidence'] = round(result.get('propaganda_score', 0), 2)
         
         return result
     
