@@ -640,61 +640,6 @@ class PhilippinesPropagandaAnalyzer:
             result = self.analyze_post(post_text, post_data.get('post_id'), self.page_group_id)
             all_results.append(result)
             
-            # Print detailed analysis for each post (matching single post format)
-            post_id = result.get('post_id', 'unknown')
-            propaganda_score = result.get('propaganda_score', 0)
-            is_maritime = result.get('is_maritime_focused', False)
-            is_social = result.get('is_social_focused', False)
-            is_entertainment = result.get('is_entertainment', False)
-            prequal = result.get('prequal', False)
-            prequal_confidence = result.get('prequal_confidence', 0)
-            text_preview = result.get('text_preview', '')
-            
-            # Create focus tags (matching single post format)
-            tags = []
-            if is_maritime:
-                tags.append("🚢 MARITIME/SECURITY")
-            if is_social:
-                tags.append("🏘️ SOCIAL ISSUES")
-            
-            tag_string = f" [{', '.join(tags)}]" if tags else ""
-            
-            # Get EOS score for display
-            eos_analysis = result.get('eos_analysis', {})
-            eos_score = eos_analysis.get('eos_score', 0)
-            
-            print(f"\n{i+1}. Post ID: {post_id} (Propaganda Score: {propaganda_score:.1f}%){tag_string}")
-            print(f"   EOS Score: {eos_score:.1f}% | Prequal: {prequal} | Confidence: {prequal_confidence:.1f}%")
-            print(f"   Text: {text_preview}")
-            
-            if is_entertainment:
-                print(f"   🎭 Entertainment content - filtered out")
-            else:
-                # Show keyword matches with details (matching single post format)
-                keyword_analysis = result.get('keyword_analysis', {})
-                keyword_scores = keyword_analysis.get('keyword_scores', {})
-                significant_categories = []
-                
-                for cat, data in keyword_scores.items():
-                    if data['count'] > 0:
-                        # Show some matched terms for context
-                        matched_preview = ', '.join(data.get('matched_terms', [])[:3])
-                        if matched_preview:
-                            significant_categories.append(f"{cat}({data['count']}): {matched_preview}")
-                        else:
-                            significant_categories.append(f"{cat}({data['count']})")
-                
-                if significant_categories:
-                    print(f"   Keywords found:")
-                    for cat_info in significant_categories[:3]:  # Show top 3 categories
-                        print(f"     • {cat_info}")
-                
-                # Show top EOS matches (matching single post format)
-                eos_analysis = result.get('eos_analysis', {})
-                top_matches = eos_analysis.get('top_matches', [])
-                if top_matches:
-                    print(f"   EOS matches: {', '.join([f'{theme}({score:.2f})' for theme, score in top_matches[:3]])}")
-            
             # Track entertainment content that was filtered
             if result.get('is_entertainment', False):
                 entertainment_filtered += 1
@@ -861,78 +806,78 @@ def main(page_group_id = None, platform: str = 'all', limit: int = None, thresho
             
         else:
             print(f"📥 Loading posts from Supabase for page_group {page_group_id}...")
-        
-        # Get page_group info first
-        page_group_response = analyzer.supabase.table('page_groups').select('*').eq('id', page_group_id_text).execute()
-        if not page_group_response.data:
-            print(f"❌ Page Group {page_group_id_text} not found")
-            return
-        
-        page_group_info = page_group_response.data[0]
-        page_group_name = page_group_info['name']
-        print(f"📋 Page Group: {page_group_name}")
-        
-        # Get pages in this page group
-        pages_response = analyzer.supabase.table('pages').select('id').eq('page_group_id', page_group_id_text).execute()
-        if not pages_response.data:
-            print(f"❌ No pages found in page group {page_group_id_text}")
-            return
-        
-        page_ids = [page['id'] for page in pages_response.data]
-        print(f"📋 Found {len(page_ids)} pages in page group")
-        
-        # Load posts that need prequalification
-        if not overwrite:
-            print(f"🔍 Loading posts that need prequalification...")
             
-            # Query posts that don't have prequal results yet
-            posts_query = analyzer.supabase.table('posts').select('*').in_('page_id', page_ids).is_('prequal', 'null')
-            
-            # Apply platform filter if specified
-            if platform and platform.lower() != 'all':
-                posts_query = posts_query.eq('platform', platform)
-                print(f"🔍 Filtering by platform: {platform}")
-            
-            # Apply limit if specified
-            if limit:
-                posts_query = posts_query.limit(limit)
-                print(f"🔍 Limiting to {limit} posts")
-            
-            response = posts_query.execute()
-            all_posts_data = response.data
-            print(f"📊 Found {len(all_posts_data)} posts needing prequalification")
-            
-            if not all_posts_data:
-                print(f"✅ All posts for page_group {page_group_id_text} have already been prequalified!")
-                print(f"💡 Use --overwrite flag to reprocess all posts")
+            # Get page_group info first
+            page_group_response = analyzer.supabase.table('page_groups').select('*').eq('id', page_group_id_text).execute()
+            if not page_group_response.data:
+                print(f"❌ Page Group {page_group_id_text} not found")
                 return
             
-        else:
-            print(f"🔄 Overwrite mode: Loading all posts for reprocessing...")
-        
-            # Build query for all posts in the page group
-            posts_query = analyzer.supabase.table('posts').select('*').in_('page_id', page_ids)
-        
-            # Apply platform filter if specified
-            if platform and platform.lower() != 'all':
-                posts_query = posts_query.eq('platform', platform)
-                print(f"🔍 Filtering by platform: {platform}")
-        
-            # Apply limit if specified
-            if limit:
-                posts_query = posts_query.limit(limit)
-                print(f"🔍 Limiting to {limit} posts")
+            page_group_info = page_group_response.data[0]
+            page_group_name = page_group_info['name']
+            print(f"📋 Page Group: {page_group_name}")
             
-            response = posts_query.execute()
-            all_posts_data = response.data
-            print(f"📊 Found {len(all_posts_data)} posts for reprocessing")
-            
-            if not all_posts_data:
-                print(f"❌ No posts found for page_group {page_group_id_text}")
+            # Get pages in this page group
+            pages_response = analyzer.supabase.table('pages').select('id').eq('page_group_id', page_group_id_text).execute()
+            if not pages_response.data:
+                print(f"❌ No pages found in page group {page_group_id_text}")
                 return
-        
-        posts_data = all_posts_data
-        print(f"✅ Will process {len(posts_data)} posts")
+            
+            page_ids = [page['id'] for page in pages_response.data]
+            print(f"📋 Found {len(page_ids)} pages in page group")
+            
+            # Load posts that need prequalification
+            if not overwrite:
+                print(f"🔍 Loading posts that need prequalification...")
+                
+                # Query posts that don't have prequal results yet
+                posts_query = analyzer.supabase.table('posts').select('*').in_('page_id', page_ids).is_('prequal', 'null')
+                
+                # Apply platform filter if specified
+                if platform and platform.lower() != 'all':
+                    posts_query = posts_query.eq('platform', platform)
+                    print(f"🔍 Filtering by platform: {platform}")
+                
+                # Apply limit if specified
+                if limit:
+                    posts_query = posts_query.limit(limit)
+                    print(f"🔍 Limiting to {limit} posts")
+                
+                response = posts_query.execute()
+                all_posts_data = response.data
+                print(f"📊 Found {len(all_posts_data)} posts needing prequalification")
+                
+                if not all_posts_data:
+                    print(f"✅ All posts for page_group {page_group_id_text} have already been prequalified!")
+                    print(f"💡 Use --overwrite flag to reprocess all posts")
+                    return
+                    
+            else:
+                print(f"🔄 Overwrite mode: Loading all posts for reprocessing...")
+                
+                # Build query for all posts in the page group
+                posts_query = analyzer.supabase.table('posts').select('*').in_('page_id', page_ids)
+            
+                # Apply platform filter if specified
+                if platform and platform.lower() != 'all':
+                    posts_query = posts_query.eq('platform', platform)
+                    print(f"🔍 Filtering by platform: {platform}")
+                
+                # Apply limit if specified
+                if limit:
+                    posts_query = posts_query.limit(limit)
+                    print(f"🔍 Limiting to {limit} posts")
+                
+                response = posts_query.execute()
+                all_posts_data = response.data
+                print(f"📊 Found {len(all_posts_data)} posts for reprocessing")
+                
+                if not all_posts_data:
+                    print(f"❌ No posts found for page_group {page_group_id_text}")
+                    return
+            
+            posts_data = all_posts_data
+            print(f"✅ Will process {len(posts_data)} posts")
         
     except Exception as e:
         print(f"❌ Error loading ads from Supabase: {e}")
