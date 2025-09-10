@@ -731,6 +731,9 @@ class PhilippinesPropagandaAnalyzer:
             return
         
         try:
+            successful_updates = 0
+            failed_updates = 0
+            
             # Process results in batches
             for i in range(0, len(results), batch_size):
                 batch = results[i:i + batch_size]
@@ -742,18 +745,31 @@ class PhilippinesPropagandaAnalyzer:
                     prequal = result.get('prequal', False)
                     prequal_confidence = result.get('prequal_confidence', 0.0)
                     
+                    print(f"    🔍 Attempting to update post_id: {post_id}")
+                    
                     # Update the posts table with prequal results
                     update_response = self.supabase.table('posts').update({
                         'prequal': prequal,
                         'prequal_confidence': prequal_confidence
                     }).eq('post_id', post_id).execute()
                     
-                    if update_response.data:
+                    print(f"    📊 Update response: {update_response}")
+                    
+                    if update_response.data and len(update_response.data) > 0:
                         print(f"    ✅ Updated post {post_id}: prequal={prequal}, confidence={prequal_confidence:.2f}")
+                        successful_updates += 1
                     else:
-                        print(f"    ⚠️  No post found with ID {post_id}")
+                        print(f"    ⚠️  No post found with ID {post_id} - checking if post exists...")
+                        
+                        # Check if the post exists
+                        check_response = self.supabase.table('posts').select('post_id').eq('post_id', post_id).execute()
+                        if check_response.data:
+                            print(f"    📋 Post exists but update failed")
+                        else:
+                            print(f"    ❌ Post does not exist in database")
+                        failed_updates += 1
             
-            print(f"✅ Successfully updated {len(results)} posts with prequal results")
+            print(f"✅ Update summary: {successful_updates} successful, {failed_updates} failed out of {len(results)} total")
             
         except Exception as e:
             print(f"❌ Error saving results to Supabase: {e}")
@@ -955,9 +971,11 @@ if __name__ == "__main__":
             try:
                 analyzer.save_results_to_supabase([result])
                 result['database_saved'] = True
+                result['database_message'] = 'Successfully saved to database'
             except Exception as db_error:
                 result['database_saved'] = False
                 result['database_error'] = str(db_error)
+                result['database_message'] = 'Failed to save to database'
             
             # Output JSON result
             print(json.dumps(result, indent=2))
