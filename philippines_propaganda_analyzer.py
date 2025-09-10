@@ -18,6 +18,16 @@ from pathlib import Path
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
+
+
+import sys
+if sys.platform.startswith('win'):
+    import codecs
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+
 # Load environment variables from .env.local
 load_dotenv('.env.local')
 
