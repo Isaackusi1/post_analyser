@@ -35,7 +35,7 @@ except LookupError:
     nltk.download('punkt')
 
 class PhilippinesPropagandaAnalyzer:
-    def __init__(self, project_id = 115):
+    def __init__(self, page_group_id = "115"):
         """Initialize the Philippines-focused propaganda analyzer."""
         print("🔧 Initializing Philippines Propaganda Analyzer...")
         print("  🎯 Focus: Maritime security, territorial issues, and broader propaganda detection")
@@ -53,8 +53,8 @@ class PhilippinesPropagandaAnalyzer:
         else:
             self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
         
-        # Store project_id as text (for eos_definitions table compatibility)
-        self.project_id = str(project_id) if project_id else "115"
+        # Store page_group_id as text (for eos_definitions table compatibility)
+        self.page_group_id = str(page_group_id) if page_group_id else "115"
         
         # Initialize centralized data extractor if available
         if DATA_EXTRACTOR_AVAILABLE:
@@ -85,8 +85,8 @@ class PhilippinesPropagandaAnalyzer:
         # Try centralized data extractor first
         if self.data_extractor is not None:
             try:
-                print(f"  📊 Loading EOS definitions using centralized extractor for project_id: {self.project_id}")
-                eos_definitions = self.data_extractor.get_eos_definitions(self.project_id)
+                print(f"  📊 Loading EOS definitions using centralized extractor for page_group_id: {self.page_group_id}")
+                eos_definitions = self.data_extractor.get_eos_definitions(self.page_group_id)
                 
                 definitions = {}
                 for record in eos_definitions:
@@ -117,12 +117,12 @@ class PhilippinesPropagandaAnalyzer:
             return {}
             
         try:
-            print(f"  📊 Loading EOS definitions directly from Supabase for project_id: {self.project_id}")
+            print(f"  📊 Loading EOS definitions directly from Supabase for page_group_id: {self.page_group_id}")
             
             # Query EOS definitions from Supabase
             response = self.supabase.table('eos_definitions').select(
                 'narrative_element, theme, definition, signals'
-            ).eq('project_id', self.project_id).execute()
+            ).eq('page_group_id', self.page_group_id).execute()
             
             definitions = {}
             for record in response.data:
@@ -555,10 +555,10 @@ class PhilippinesPropagandaAnalyzer:
         
         return min(100, max(0, propaganda_score))
     
-    def analyze_post(self, post_text: str, post_id: str = None, project_id: str = "1") -> Dict[str, Any]:
+    def analyze_post(self, post_text: str, post_id: str = None, page_group_id: str = "1") -> Dict[str, Any]:
         """Analyze a single post for propaganda likelihood - CM System Integration."""
-        # Use project_id as text
-        project_id_text = str(project_id) if project_id else "1"
+        # Use page_group_id as text
+        page_group_id_text = str(page_group_id) if page_group_id else "1"
         
         # Create post data structure for analysis (CM System format)
         post_data = {
@@ -577,7 +577,7 @@ class PhilippinesPropagandaAnalyzer:
         
         # Add CM system specific fields
         result['post_id'] = post_id
-        result['project_id'] = project_id
+        result['page_group_id'] = page_group_id
         
         # Calculate prequal decision and confidence
         should_scrape = bool(
@@ -796,7 +796,7 @@ class PhilippinesPropagandaAnalyzer:
                     
                     formatted_results.append({
                         'ad_id': ad_id_text,
-                        'project_id': self.project_id,
+                        'page_group_id': self.page_group_id,
                         'text': text,
                         'propaganda_score': round(propaganda_score, 2),
                         'is_maritime_focused': is_maritime,
@@ -826,22 +826,22 @@ class PhilippinesPropagandaAnalyzer:
         # [Rest of the Supabase saving logic remains the same as original]
         # ... (keeping the same batch saving implementation)
 
-def main(project_id = None, platform: str = 'all', limit: int = None, threshold: float = 25.0, verbose: bool = False, overwrite: bool = False):
+def main(page_group_id = None, platform: str = 'all', limit: int = None, threshold: float = 25.0, verbose: bool = False, overwrite: bool = False):
     """Main function to run Philippines-focused propaganda analysis."""
     # Use environment variable or default
-    if project_id is None:
-        project_id = os.getenv('DEFAULT_PROJECT_ID', '115')
+    if page_group_id is None:
+        page_group_id = os.getenv('DEFAULT_PAGE_GROUP_ID', '115')
     
-    # Use project_id as text for database queries
-    project_id_text = str(project_id)
+    # Use page_group_id as text for database queries
+    page_group_id_text = str(page_group_id)
     
     print("🇵🇭 PHILIPPINES PROPAGANDA DETECTION SYSTEM")
     print("="*60)
     print("Focus Areas: Maritime Security, Territorial Issues, Broad Propaganda")
     print("="*60)
     
-    # Initialize analyzer with project_id
-    analyzer = PhilippinesPropagandaAnalyzer(project_id=project_id_text)
+    # Initialize analyzer with page_group_id
+    analyzer = PhilippinesPropagandaAnalyzer(page_group_id=page_group_id_text)
     
     # [Rest of the main function logic remains the same]
     # Load ads data from Supabase (same implementation as original)
@@ -850,27 +850,27 @@ def main(project_id = None, platform: str = 'all', limit: int = None, threshold:
         return
     
     try:
-        print(f"📥 Loading ads from Supabase for project {project_id}...")
+        print(f"📥 Loading ads from Supabase for page_group {page_group_id}...")
         
-        # Get project info first
-        project_response = analyzer.supabase.table('projects').select('*').eq('projectid', project_id_text).execute()
-        if not project_response.data:
-            print(f"❌ Project {project_id_text} not found")
+        # Get page_group info first
+        page_group_response = analyzer.supabase.table('page_groups').select('*').eq('page_group_id', page_group_id_text).execute()
+        if not page_group_response.data:
+            print(f"❌ Page Group {page_group_id_text} not found")
             return
         
-        project_info = project_response.data[0]
-        project_name = project_info['projectname']
-        project_name_formatted = project_name.lower().replace(' ', '_')
-        print(f"📋 Project: {project_name} (formatted: {project_name_formatted})")
+        page_group_info = page_group_response.data[0]
+        page_group_name = page_group_info['page_group_name']
+        page_group_name_formatted = page_group_name.lower().replace(' ', '_')
+        print(f"📋 Page Group: {page_group_name} (formatted: {page_group_name_formatted})")
         
         # Use RPC function to get pending ads efficiently
         if not overwrite:
-            print(f"🔍 Using RPC to get pending ads for project {project_id_text}...")
+            print(f"🔍 Using RPC to get pending ads for page_group {page_group_id_text}...")
             
             # Call the RPC function with appropriate parameters
             rpc_params = {
-                'p_project_name': project_name_formatted,
-                'p_project_id': project_id_text
+                'p_page_group_name': page_group_name_formatted,
+                'p_page_group_id': page_group_id_text
             }
             
             # Add platform filter if specified
@@ -885,7 +885,7 @@ def main(project_id = None, platform: str = 'all', limit: int = None, threshold:
             print(f"📊 Found {len(all_ads_data)} pending ads to process")
             
             if not all_ads_data:
-                print(f"✅ All ads for project {project_id_text} have already been processed!")
+                print(f"✅ All ads for page_group {page_group_id_text} have already been processed!")
                 print(f"💡 Use --overwrite flag to reprocess all ads")
                 return
                 
@@ -893,7 +893,7 @@ def main(project_id = None, platform: str = 'all', limit: int = None, threshold:
             print(f"🔄 Overwrite mode: Loading all ads for reprocessing...")
             
             # Build query for master_ad_creatives (for overwrite mode)
-            query = analyzer.supabase.table('master_ad_creatives').select('*').eq('project', project_name_formatted)
+            query = analyzer.supabase.table('master_ad_creatives').select('*').eq('page_group', page_group_name_formatted)
             
             # Apply platform filter if specified
             if platform and platform.lower() != 'all':
@@ -925,7 +925,7 @@ def main(project_id = None, platform: str = 'all', limit: int = None, threshold:
                 offset += page_size
             
             if not all_ads_data:
-                print(f"❌ No ads found for project {project_id_text}")
+                print(f"❌ No ads found for page_group {page_group_id_text}")
                 return
         
         # Apply limit if specified (after getting data)
@@ -1023,20 +1023,20 @@ if __name__ == "__main__":
         if len(sys.argv) < 4:
             print(json.dumps({
                 'success': False,
-                'message': 'Usage: python philippines_propaganda_analyzer.py --analyze-post "post_text" "post_id" [project_id]'
+                'message': 'Usage: python philippines_propaganda_analyzer.py --analyze-post "post_text" "post_id" [page_group_id]'
             }))
             sys.exit(1)
         
         post_text = sys.argv[2]
         post_id = sys.argv[3]
-        project_id = sys.argv[4] if len(sys.argv) > 4 else "1"
+        page_group_id = sys.argv[4] if len(sys.argv) > 4 else "1"
         
         try:
             # Initialize analyzer
-            analyzer = PhilippinesPropagandaAnalyzer(project_id=project_id)
+            analyzer = PhilippinesPropagandaAnalyzer(page_group_id=page_group_id)
             
             # Analyze the post
-            result = analyzer.analyze_post(post_text, post_id, project_id)
+            result = analyzer.analyze_post(post_text, post_id, page_group_id)
             
             # Output JSON result
             print(json.dumps(result, indent=2))
@@ -1046,7 +1046,7 @@ if __name__ == "__main__":
                 'success': False,
                 'message': f'Analysis failed: {str(e)}',
                 'post_id': post_id,
-                'project_id': project_id
+                'page_group_id': page_group_id
             }))
             sys.exit(1)
         
@@ -1068,11 +1068,11 @@ Examples:
     )
     
     parser.add_argument(
-        'project_id',
+        'page_group_id',
         nargs='?',
         type=str,
         default='115',
-        help='Project ID to analyze (default: 115)'
+        help='Page Group ID (UUID) to analyze (default: 115)'
     )
     
     parser.add_argument(
@@ -1117,9 +1117,9 @@ Examples:
     # Parse arguments
     args = parser.parse_args()
     
-    # Validate project_id (accept any non-empty string)
-    if not args.project_id or not args.project_id.strip():
-        print(f"❌ Invalid project_id: '{args.project_id}'. Must be a non-empty string.")
+    # Validate page_group_id (accept any non-empty string)
+    if not args.page_group_id or not args.page_group_id.strip():
+        print(f"❌ Invalid page_group_id: '{args.page_group_id}'. Must be a non-empty string.")
         sys.exit(1)
     
     # Validate limit if provided
@@ -1133,7 +1133,7 @@ Examples:
         sys.exit(1)
     
     print(f"🚀 Starting Philippines-focused analysis with:")
-    print(f"   Project ID: {args.project_id}")
+    print(f"   Page Group ID: {args.page_group_id}")
     print(f"   Platform: {args.platform}")
     print(f"   Limit: {args.limit if args.limit else 'all ads'}")
     print(f"   Threshold: {args.threshold}%")
@@ -1141,5 +1141,5 @@ Examples:
     print(f"   Overwrite: {args.overwrite}")
     print()
     
-    main(project_id=args.project_id, platform=args.platform, limit=args.limit, 
+    main(page_group_id=args.page_group_id, platform=args.platform, limit=args.limit, 
          threshold=args.threshold, verbose=args.verbose, overwrite=args.overwrite)
